@@ -1,0 +1,6 @@
+{
+  "name": "JAIRRESTAURA – Orientador Inteligente para Psicoterapeutas",
+  "description": "Plataforma web gratuita, integradora y basada en evidencia para la preparación de sesiones, reflexión clínica, aprendizaje y autocuidado de psicólogos y psicoterapeutas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
