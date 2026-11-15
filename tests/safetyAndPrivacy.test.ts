@@ -4,16 +4,30 @@ import { DIFFICULT_SITUATIONS } from '../src/data/difficultSituationsData';
 import { LIBRARY_RESOURCES } from '../src/data/libraryData';
 import { SIMULATOR_SCENARIOS } from '../src/data/simulatorScenariosData';
 import {
+  EPISTEMIC_CATEGORY_STYLES,
+  TWELVE_DIMENSIONS_META,
+  type EpistemicCategory,
+} from '../src/data/twelveDimensionsMeta';
+import {
   detectClinicalRisk,
   scanPotentialIdentifiers,
 } from '../src/services/privacy/privacyGuard';
 import {
+  buildWorksheetMarkdown,
+  countCompletedDimensions,
+  createEmptyReflectionSheet,
+} from '../src/services/reflection/localReflectionEngine';
+import {
   clearAllJournalEntries,
+  clearReflectionDraft,
   loadJournalEntries,
+  loadReflectionDraft,
   loadSessionGuides,
   saveJournalEntries,
+  saveReflectionDraft,
   saveSessionGuides,
 } from '../src/services/storage/localStore';
+import type { LibraryArea } from '../src/types';
 
 function createMemoryStorage() {
   const store = new Map<string, string>();
@@ -57,6 +71,59 @@ describe('Seguridad clínica y detección de identificadores', () => {
     expect(kinds).toContain('telefono');
     expect(kinds).toContain('documento');
     expect(kinds).toContain('nombre_probable');
+  });
+});
+
+describe('Motor de Reflexión Local en 12 Dimensiones y Exportación', () => {
+  beforeEach(() => {
+    Object.defineProperty(globalThis, 'window', {
+      value: { localStorage: createMemoryStorage() },
+      configurable: true,
+    });
+  });
+
+  it('define las 12 dimensiones con guía, ejemplo ficticio y las 5 categorías epistémicas diferenciadas', () => {
+    expect(TWELVE_DIMENSIONS_META).toHaveLength(12);
+    const categoriesUsed = new Set<EpistemicCategory>();
+    for (const dim of TWELVE_DIMENSIONS_META) {
+      expect(dim.shortDescription.length).toBeGreaterThan(20);
+      expect(dim.guidingQuestions.length).toBeGreaterThanOrEqual(2);
+      expect(dim.fictionalExample.length).toBeGreaterThan(20);
+      expect(EPISTEMIC_CATEGORY_STYLES[dim.epistemicCategory]).toBeDefined();
+      categoriesUsed.add(dim.epistemicCategory);
+    }
+    expect(categoriesUsed.size).toBe(5);
+  });
+
+  it('calcula dimensiones completadas y construye exportación Markdown con advertencias educativas y fecha opcional', () => {
+    const sheet = createEmptyReflectionSheet();
+    sheet.title = 'Viñeta ficticia de prueba';
+    sheet.caseSummary = 'Resumen ficticio para supervisión.';
+    sheet.fields.hechosDescritos = 'Expresó agotamiento laboral desde hace tres meses.';
+    sheet.fields.hipotesisTrabajo = 'Podría sostener una autoexigencia alta tras el cambio de rol.';
+
+    expect(countCompletedDimensions(sheet)).toBe(2);
+
+    const mdWithDate = buildWorksheetMarkdown(sheet);
+    expect(mdWithDate).toContain('NO constituye un diagnóstico clínico');
+    expect(mdWithDate).toContain('ni una historia clínica oficial');
+    expect(mdWithDate).toContain('Fecha de elaboración:');
+    expect(mdWithDate).toContain('01. Hechos descritos');
+    expect(mdWithDate).toContain('12. Aspectos que convendría consultar en supervisión');
+
+    sheet.includeDateInExport = false;
+    const mdWithoutDate = buildWorksheetMarkdown(sheet);
+    expect(mdWithoutDate).not.toContain('Fecha de elaboración:');
+  });
+
+  it('permite guardar, recuperar y borrar voluntariamente el borrador de la Hoja Reflexiva Local', () => {
+    const sheet = createEmptyReflectionSheet();
+    sheet.fields.hechosDescritos = 'Nota local de prueba.';
+    expect(saveReflectionDraft(sheet)).toBe(true);
+    const loaded = loadReflectionDraft();
+    expect(loaded?.fields.hechosDescritos).toBe('Nota local de prueba.');
+    expect(clearReflectionDraft()).toBe(true);
+    expect(loadReflectionDraft()).toBeNull();
   });
 });
 
@@ -121,14 +188,43 @@ describe('Integridad de contenidos educativos sin conexión', () => {
     expect(allText).not.toContain('paciente problemático');
   });
 
-  it('incluye simulador funcional offline con pasos navegables y biblioteca de 9 áreas sin enlaces inventados', () => {
+  it('incluye simulador funcional offline y biblioteca completa de 14 categorías sin enlaces inventados', () => {
     expect(SIMULATOR_SCENARIOS.length).toBeGreaterThanOrEqual(3);
     for (const sc of SIMULATOR_SCENARIOS) {
       expect(sc.steps[sc.initialStepId]).toBeDefined();
       expect(sc.steps[sc.initialStepId].options.length).toBeGreaterThanOrEqual(2);
     }
 
-    expect(LIBRARY_RESOURCES).toHaveLength(9);
+    const expectedAreas: LibraryArea[] = [
+      'Fundamentos de psicoterapia',
+      'Alianza terapéutica',
+      'Formulación de casos',
+      'Enfoques cognitivo-conductuales',
+      'Enfoques humanistas',
+      'Enfoques sistémicos',
+      'Terapia narrativa',
+      'Enfoques psicodinámicos',
+      'Terapias contextuales',
+      'Ética profesional',
+      'Supervisión',
+      'Autocuidado',
+      'Prevención del agotamiento',
+      'Investigación basada en evidencia',
+    ];
+
+    expect(LIBRARY_RESOURCES).toHaveLength(14);
+    const presentAreas = new Set(LIBRARY_RESOURCES.map((item) => item.area));
+    for (const area of expectedAreas) {
+      expect(presentAreas.has(area)).toBe(true);
+    }
+
+    for (const item of LIBRARY_RESOURCES) {
+      expect(item.reviewDate.trim().length).toBeGreaterThan(0);
+      expect(item.applicationLimits.trim().length).toBeGreaterThan(15);
+      expect(item.learningObjectives.length).toBeGreaterThanOrEqual(2);
+      expect(item.references.length).toBeGreaterThanOrEqual(1);
+    }
+
     const libJson = JSON.stringify(LIBRARY_RESOURCES);
     expect(libJson).not.toMatch(/https?:\/\//i);
     expect(libJson).not.toMatch(/doi\.org/i);

@@ -1,3 +1,4 @@
+import type { LocalReflectionSheet } from '../reflection/localReflectionEngine';
 import type { JournalEntry, SessionGuide } from '../../types';
 
 const KEYS = {
@@ -7,6 +8,8 @@ const KEYS = {
   SELF_CARE_PLAN: 'jairrestaura_selfcare_plan_v1',
   SIMULATOR_COMPLETED: 'jairrestaura_simulator_completed_v1',
   DIFFICULT_NOTES: 'jairrestaura_difficult_notes_v1',
+  REFLECTION_DRAFT: 'jairrestaura_reflection_draft_v1',
+  REFLECTION_ARCHIVE: 'jairrestaura_reflection_archive_v1',
 } as const;
 
 function safeRead<T>(key: string, fallback: T): T {
@@ -110,6 +113,32 @@ export function loadDifficultNotes(): Record<string, string> {
 
 export function saveDifficultNotes(notes: Record<string, string>): boolean {
   return safeWrite(KEYS.DIFFICULT_NOTES, notes);
+}
+
+export function loadReflectionDraft(): LocalReflectionSheet | null {
+  return safeRead<LocalReflectionSheet | null>(KEYS.REFLECTION_DRAFT, null);
+}
+
+export function saveReflectionDraft(sheet: LocalReflectionSheet): boolean {
+  return safeWrite(KEYS.REFLECTION_DRAFT, sheet);
+}
+
+export function clearReflectionDraft(): boolean {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return false;
+    window.localStorage.removeItem(KEYS.REFLECTION_DRAFT);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function loadReflectionArchive(): LocalReflectionSheet[] {
+  return safeRead<LocalReflectionSheet[]>(KEYS.REFLECTION_ARCHIVE, []);
+}
+
+export function saveReflectionArchive(sheets: LocalReflectionSheet[]): boolean {
+  return safeWrite(KEYS.REFLECTION_ARCHIVE, sheets);
 }
 
 export function clearAllLocalWorkspaceData(): void {

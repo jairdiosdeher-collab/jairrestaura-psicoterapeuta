@@ -1,23 +1,28 @@
 import React, { useMemo, useState } from 'react';
 import { BookMarked, Search } from 'lucide-react';
 import { LIBRARY_RESOURCES } from '../../data/libraryData';
-import type { LibraryResource } from '../../types';
+import type { LibraryArea } from '../../types';
 
-const AREAS: ('Todas' | LibraryResource['area'])[] = [
+const AREAS: ('Todas' | LibraryArea)[] = [
   'Todas',
   'Fundamentos de psicoterapia',
   'Alianza terapéutica',
-  'Escucha y comunicación',
   'Formulación de casos',
-  'Enfoques terapéuticos',
+  'Enfoques cognitivo-conductuales',
+  'Enfoques humanistas',
+  'Enfoques sistémicos',
+  'Terapia narrativa',
+  'Enfoques psicodinámicos',
+  'Terapias contextuales',
   'Ética profesional',
-  'Autocuidado',
   'Supervisión',
-  'Investigación y práctica basada en evidencia',
+  'Autocuidado',
+  'Prevención del agotamiento',
+  'Investigación basada en evidencia',
 ];
 
 export const LibraryModule: React.FC = () => {
-  const [selectedArea, setSelectedArea] = useState<'Todas' | LibraryResource['area']>('Todas');
+  const [selectedArea, setSelectedArea] = useState<'Todas' | LibraryArea>('Todas');
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState<string>(LIBRARY_RESOURCES[0].id);
 
@@ -44,13 +49,13 @@ export const LibraryModule: React.FC = () => {
     <div className="space-y-6">
       <div className="space-y-2">
         <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-          Módulo 10 · Formación continua gratuita y disponible sin conexión
+          Módulo 10 · 14 áreas temáticas gratuitas e independientes del motor de IA
         </p>
         <h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
-          Biblioteca Profesional
+          Biblioteca Profesional Basada en Evidencia
         </h2>
         <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-          Recursos originales en nueve áreas clave de la psicoterapia contemporánea, con distinción explícita del tipo de evidencia y referencias bibliográficas verificables.
+          Recursos educativos originales disponibles sin registro y sin conexión tras la instalación PWA, con fecha de revisión, advertencias sobre límites de aplicación y referencias verificables.
         </p>
       </div>
 
@@ -61,15 +66,15 @@ export const LibraryModule: React.FC = () => {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por tema, concepto o área clínica..."
+            placeholder="Buscar por tema, enfoque, concepto o categoría..."
             aria-label="Buscar en biblioteca profesional"
             className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm dark:border-slate-700 dark:bg-slate-900"
           />
         </div>
         <select
-          aria-label="Filtrar por área temática"
+          aria-label="Filtrar por categoría temática"
           value={selectedArea}
-          onChange={(e) => setSelectedArea(e.target.value as 'Todas' | LibraryResource['area'])}
+          onChange={(e) => setSelectedArea(e.target.value as 'Todas' | LibraryArea)}
           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
         >
           {AREAS.map((area) => (
@@ -120,7 +125,7 @@ export const LibraryModule: React.FC = () => {
               <BookMarked className="mt-1 h-5 w-5 shrink-0 text-[#0F4C5C] dark:text-teal-300" />
               <div>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {current.area} · {current.evidenceType} · Lectura de {current.readingTime}
+                  {current.area} · {current.evidenceType} · Lectura de {current.readingTime} · Revisión: {current.reviewDate}
                 </p>
                 <h3 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
                   {current.title}
@@ -129,6 +134,11 @@ export const LibraryModule: React.FC = () => {
                   {current.description}
                 </p>
               </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 text-xs leading-relaxed text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+              <p className="font-semibold">Límites de aplicación clínica</p>
+              <p className="mt-1">{current.applicationLimits}</p>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">

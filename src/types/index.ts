@@ -133,21 +133,30 @@ export interface SimulatorScenario {
   closingReflection: string[];
 }
 
+export type LibraryArea =
+  | 'Fundamentos de psicoterapia'
+  | 'Alianza terapéutica'
+  | 'Formulación de casos'
+  | 'Enfoques cognitivo-conductuales'
+  | 'Enfoques humanistas'
+  | 'Enfoques sistémicos'
+  | 'Terapia narrativa'
+  | 'Enfoques psicodinámicos'
+  | 'Terapias contextuales'
+  | 'Ética profesional'
+  | 'Supervisión'
+  | 'Autocuidado'
+  | 'Prevención del agotamiento'
+  | 'Investigación basada en evidencia';
+
 export interface LibraryResource {
   id: string;
-  area:
-    | 'Fundamentos de psicoterapia'
-    | 'Alianza terapéutica'
-    | 'Escucha y comunicación'
-    | 'Formulación de casos'
-    | 'Enfoques terapéuticos'
-    | 'Ética profesional'
-    | 'Autocuidado'
-    | 'Supervisión'
-    | 'Investigación y práctica basada en evidencia';
+  area: LibraryArea;
   title: string;
   evidenceType: EvidenceCategory;
   readingTime: string;
+  reviewDate: string;
+  applicationLimits: string;
   description: string;
   learningObjectives: string[];
   sections: {

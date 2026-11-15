@@ -2,6 +2,7 @@ import type { CaseAnalysisResponse } from '../../types';
 
 export interface AiStatusInfo {
   configured: boolean;
+  reachable: boolean;
   model: string;
   message: string;
 }
@@ -12,16 +13,30 @@ export async function fetchAiStatus(): Promise<AiStatusInfo> {
     if (!res.ok) {
       return {
         configured: false,
+        reachable: false,
         model: 'No disponible',
-        message: 'El servicio de IA no responde en este momento. Los módulos educativos y locales siguen disponibles.',
+        message: 'Motor IA no configurado o no disponible. Todas las herramientas locales continúan disponibles.',
       };
     }
-    return (await res.json()) as AiStatusInfo;
+    const payload = (await res.json()) as {
+      configured: boolean;
+      model: string;
+      message: string;
+    };
+    return {
+      configured: payload.configured,
+      reachable: true,
+      model: payload.model,
+      message: payload.configured
+        ? payload.message
+        : 'Motor IA no configurado. Todas las herramientas locales continúan disponibles.',
+    };
   } catch {
     return {
       configured: false,
-      model: 'Modo sin conexión',
-      message: 'Sin conexión con el servidor de IA. Puede continuar usando la hoja reflexiva local y el resto de módulos.',
+      reachable: false,
+      model: 'No disponible',
+      message: 'Motor IA no disponible (sin conexión). Todas las herramientas locales continúan disponibles.',
     };
   }
 }

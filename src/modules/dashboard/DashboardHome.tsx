@@ -115,8 +115,8 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
       id: 'library',
       number: '10',
       title: 'Biblioteca Profesional',
-      description: 'Artículos originales en 9 áreas con referencias verificables.',
-      meta: 'Disponible sin conexión',
+      description: 'Artículos originales en 14 categorías temáticas con referencias verificables.',
+      meta: '14 categorías · Disponible sin conexión',
       icon: BookMarked,
     },
   ];
@@ -132,7 +132,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
             Pensar mejor. Acompañar mejor. Crecer profesionalmente.
           </h1>
           <p className="text-base leading-relaxed text-slate-600 dark:text-slate-300">
-            Bienvenido a <strong>JAIRRESTAURA</strong>, un espacio sobrio, integrador y basado en evidencia para que psicólogos y psicoterapeutas preparen sus sesiones, contrasten hipótesis con prudencia, fortalezcan la alianza terapéutica y cuiden su propio bienestar profesional.
+            Bienvenido a <strong>JAIRRESTAURA</strong>, un espacio sobrio, integrador y basado en evidencia para que psicólogos y psicoterapeutas preparen sus sesiones, trabajen la Hoja Reflexiva Local en 12 dimensiones, fortalezcan la alianza terapéutica y cuiden su bienestar profesional.
           </p>
         </div>
 
@@ -142,7 +142,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
             onClick={() => onNavigate('case-assistant')}
             className="inline-flex items-center gap-2 rounded-lg bg-[#0F4C5C] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#0B3A47] whitespace-nowrap shrink-0"
           >
-            Abrir Asistente de Casos
+            Abrir Hoja Reflexiva (12 Dimensiones)
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
@@ -174,7 +174,9 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
             Módulos de trabajo y formación
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Estado IA: {aiStatus.configured ? 'Configurada en servidor' : 'Modo local sin IA'}
+            {aiStatus.configured
+              ? 'Motor IA conectado · Herramientas locales disponibles'
+              : 'Motor IA no configurado. Todas las herramientas locales continúan disponibles.'}
           </p>
         </div>
 
