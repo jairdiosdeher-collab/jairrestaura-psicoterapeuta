@@ -55,7 +55,7 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     id: 'case-assistant',
-    label: 'Asistente de casos (IA)',
+    label: 'Casos y Hoja Reflexiva (12D)',
     group: 'Práctica clínica',
     icon: BrainCircuit,
   },

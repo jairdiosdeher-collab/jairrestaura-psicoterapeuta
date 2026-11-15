@@ -1,9 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Check, Copy, Download, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
-import { ClinicalNoticeBanner, PiiWarningBox } from '../../components/ClinicalNoticeBanner';
+import {
+  ClinicalNoticeBanner,
+  PiiWarningBox,
+  StorageErrorBanner,
+} from '../../components/ClinicalNoticeBanner';
 import { scanPotentialIdentifiers } from '../../services/privacy/privacyGuard';
 import {
   downloadTextFile,
+  getLastStorageFailureReason,
+  getStorageErrorMessage,
   loadSessionGuides,
   saveSessionGuides,
 } from '../../services/storage/localStore';
@@ -33,6 +39,59 @@ function createEmptyGuide(): SessionGuide {
   };
 }
 
+export function hasSessionGuideContent(draft: SessionGuide): boolean {
+  return Boolean(
+    draft.title.trim() ||
+      draft.generalReason.trim() ||
+      draft.sessionObjective.trim() ||
+      draft.themesToExplore.some((t) => t.trim().length > 0) ||
+      draft.openQuestions.some((q) => q.trim().length > 0) ||
+      draft.potentialDifficulties.trim() ||
+      draft.communicationStrategies.trim() ||
+      draft.closingAndAgreements.trim() ||
+      draft.followUpNotes.trim()
+  );
+}
+
+export function formatSessionGuideMarkdown(g: SessionGuide): string {
+  const dateLabel = new Date(g.updatedAt || Date.now()).toLocaleDateString('es-ES');
+  return [
+    `# Guía de Preparación de Sesión — ${g.title || 'Sin título'}`,
+    `Fecha de elaboración: ${dateLabel}`,
+    `Enfoque orientador: ${g.approachFocus}`,
+    '',
+    '> **Aviso educativo:** Documento reflexivo de preparación profesional. NO constituye historia clínica oficial ni sustituye el juicio clínico ni la relación terapéutica.',
+    '',
+    `## Motivo general (sin datos identificables)`,
+    g.generalReason || 'No especificado.',
+    '',
+    `## Objetivo de la sesión`,
+    g.sessionObjective || 'Por definir colaborativamente.',
+    '',
+    `## Temas que conviene explorar`,
+    ...(g.themesToExplore.filter(Boolean).length
+      ? g.themesToExplore.filter(Boolean).map((t) => `- ${t}`)
+      : ['- Por explorar']),
+    '',
+    `## Preguntas abiertas`,
+    ...(g.openQuestions.filter(Boolean).length
+      ? g.openQuestions.filter(Boolean).map((q) => `- ${q}`)
+      : ['- Por definir']),
+    '',
+    `## Posibles dificultades`,
+    g.potentialDifficulties || 'Sin observaciones registradas.',
+    '',
+    `## Estrategias de comunicación`,
+    g.communicationStrategies || 'Escucha activa y validación.',
+    '',
+    `## Cierre y acuerdos`,
+    g.closingAndAgreements || 'Recapitulación y retroalimentación final.',
+    '',
+    `## Aspectos que requieren seguimiento`,
+    g.followUpNotes || 'Sin pendientes definidos.',
+  ].join('\n');
+}
+
 export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
   onDataChange,
 }) => {
@@ -41,11 +100,8 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
   const [copied, setCopied] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-
-  useEffect(() => {
-    saveSessionGuides(guides);
-    onDataChange?.();
-  }, [guides, onDataChange]);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const piiFindings = useMemo(() => {
     const combined = [
@@ -90,6 +146,15 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
 
   const handleSaveGuide = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!hasSessionGuideContent(draft)) {
+      setValidationError(
+        'Completa al menos un campo (título, motivo general, objetivo, tema, pregunta o nota) antes de guardar la guía.'
+      );
+      setSavedNotice(false);
+      return;
+    }
+    setValidationError(null);
+
     const now = new Date().toISOString();
     const cleanTitle =
       draft.title.trim() ||
@@ -105,77 +170,70 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
       openQuestions: draft.openQuestions.map((q) => q.trim()).filter(Boolean),
     };
 
-    setGuides((prev) => {
-      const exists = prev.some((g) => g.id === toSave.id);
-      if (exists) {
-        return prev.map((g) => (g.id === toSave.id ? toSave : g));
-      }
-      return [toSave, ...prev];
-    });
+    const exists = guides.some((g) => g.id === toSave.id);
+    const nextGuides = exists
+      ? guides.map((g) => (g.id === toSave.id ? toSave : g))
+      : [toSave, ...guides];
+
+    setGuides(nextGuides);
     setDraft({
       ...toSave,
       themesToExplore: toSave.themesToExplore.length > 0 ? toSave.themesToExplore : [''],
       openQuestions: toSave.openQuestions.length > 0 ? toSave.openQuestions : [''],
     });
-    setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 2500);
-  };
 
-  const formatGuideText = (g: SessionGuide) => {
-    return [
-      `# Guía de Preparación de Sesión — ${g.title || 'Sin título'}`,
-      `Enfoque orientador: ${g.approachFocus}`,
-      '',
-      `## Motivo general (sin datos identificables)`,
-      g.generalReason || 'No especificado.',
-      '',
-      `## Objetivo de la sesión`,
-      g.sessionObjective || 'Por definir colaborativamente.',
-      '',
-      `## Temas que conviene explorar`,
-      ...(g.themesToExplore.filter(Boolean).length
-        ? g.themesToExplore.filter(Boolean).map((t) => `- ${t}`)
-        : ['- Por explorar']),
-      '',
-      `## Preguntas abiertas`,
-      ...(g.openQuestions.filter(Boolean).length
-        ? g.openQuestions.filter(Boolean).map((q) => `- ${q}`)
-        : ['- Por definir']),
-      '',
-      `## Posibles dificultades`,
-      g.potentialDifficulties || 'Sin observaciones registradas.',
-      '',
-      `## Estrategias de comunicación`,
-      g.communicationStrategies || 'Escucha activa y validación.',
-      '',
-      `## Cierre y acuerdos`,
-      g.closingAndAgreements || 'Recapitulación y retroalimentación final.',
-      '',
-      `## Aspectos que requieren seguimiento`,
-      g.followUpNotes || 'Sin pendientes definidos.',
-    ].join('\n');
+    const ok = saveSessionGuides(nextGuides);
+    onDataChange?.();
+    if (ok) {
+      setStorageError(null);
+      setSavedNotice(true);
+      window.setTimeout(() => setSavedNotice(false), 2500);
+    } else {
+      setSavedNotice(false);
+      setStorageError(getStorageErrorMessage(getLastStorageFailureReason()));
+    }
   };
 
   const handleCopy = async () => {
+    const content = formatSessionGuideMarkdown(draft);
     try {
-      await navigator.clipboard.writeText(formatGuideText(draft));
+      await navigator.clipboard.writeText(content);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      downloadTextFile(`guia-sesion-${Date.now()}.md`, formatGuideText(draft));
+      const ok = downloadTextFile(`guia-sesion-${Date.now()}.md`, content);
+      if (!ok) {
+        setStorageError(
+          'No se pudo copiar al portapapeles ni iniciar descarga automática. Puedes seleccionar el texto manualmente.'
+        );
+      }
     }
   };
 
   const handleExport = () => {
-    downloadTextFile(`guia-sesion-${Date.now()}.md`, formatGuideText(draft));
+    const ok = downloadTextFile(
+      `guia-sesion-${Date.now()}.md`,
+      formatSessionGuideMarkdown(draft)
+    );
+    if (!ok) {
+      setStorageError('No se pudo generar el archivo Markdown en este navegador.');
+    }
   };
 
   const handleDeleteGuide = (id: string) => {
-    setGuides((prev) => prev.filter((g) => g.id !== id));
+    const nextGuides = guides.filter((g) => g.id !== id);
+    setGuides(nextGuides);
     if (draft.id === id) {
       setDraft(createEmptyGuide());
     }
     setConfirmDeleteId(null);
+    const ok = saveSessionGuides(nextGuides);
+    onDataChange?.();
+    if (!ok) {
+      setStorageError(getStorageErrorMessage(getLastStorageFailureReason()));
+    } else {
+      setStorageError(null);
+    }
   };
 
   return (
@@ -199,6 +257,15 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
       />
 
       <PiiWarningBox findings={piiFindings} />
+      <StorageErrorBanner message={storageError} onDismiss={() => setStorageError(null)} />
+      {validationError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+        >
+          {validationError}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <form
@@ -217,7 +284,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                 id="session-title"
                 type="text"
                 value={draft.title}
-                onChange={(e) => setDraft((p) => ({ ...p, title: e.target.value }))}
+                onChange={(e) => {
+                  setValidationError(null);
+                  setDraft((p) => ({ ...p, title: e.target.value }));
+                }}
                 placeholder="Ej. Caso ficticio A · Sesión 4"
                 className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
@@ -258,7 +328,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
               id="session-reason"
               rows={2}
               value={draft.generalReason}
-              onChange={(e) => setDraft((p) => ({ ...p, generalReason: e.target.value }))}
+              onChange={(e) => {
+                setValidationError(null);
+                setDraft((p) => ({ ...p, generalReason: e.target.value }));
+              }}
               placeholder="Ej. Persona adulta con sobrecarga laboral y dificultad para poner límites en vínculos cercanos."
               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
@@ -275,7 +348,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
               id="session-objective"
               rows={2}
               value={draft.sessionObjective}
-              onChange={(e) => setDraft((p) => ({ ...p, sessionObjective: e.target.value }))}
+              onChange={(e) => {
+                setValidationError(null);
+                setDraft((p) => ({ ...p, sessionObjective: e.target.value }));
+              }}
               placeholder="Ej. Explorar cómo se vivió el acuerdo de la semana anterior y validar prioridades actuales del consultante."
               className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
@@ -301,7 +377,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                   <input
                     type="text"
                     value={theme}
-                    onChange={(e) => updateListItem('themesToExplore', idx, e.target.value)}
+                    onChange={(e) => {
+                      setValidationError(null);
+                      updateListItem('themesToExplore', idx, e.target.value);
+                    }}
                     placeholder={`Tema ${idx + 1} por explorar`}
                     aria-label={`Tema ${idx + 1} por explorar`}
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
@@ -340,7 +419,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                   <input
                     type="text"
                     value={q}
-                    onChange={(e) => updateListItem('openQuestions', idx, e.target.value)}
+                    onChange={(e) => {
+                      setValidationError(null);
+                      updateListItem('openQuestions', idx, e.target.value);
+                    }}
                     placeholder={`Pregunta abierta ${idx + 1}`}
                     aria-label={`Pregunta abierta ${idx + 1}`}
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
@@ -366,7 +448,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                   <button
                     key={idx}
                     type="button"
-                    onClick={() => addListItem('openQuestions', stem)}
+                    onClick={() => {
+                      setValidationError(null);
+                      addListItem('openQuestions', stem);
+                    }}
                     className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-left text-xs text-slate-700 transition-colors hover:border-[#0F4C5C] hover:bg-white dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-200 dark:hover:border-teal-500"
                   >
                     + {stem}
@@ -388,9 +473,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                 id="session-difficulties"
                 rows={3}
                 value={draft.potentialDifficulties}
-                onChange={(e) =>
-                  setDraft((p) => ({ ...p, potentialDifficulties: e.target.value }))
-                }
+                onChange={(e) => {
+                  setValidationError(null);
+                  setDraft((p) => ({ ...p, potentialDifficulties: e.target.value }));
+                }}
                 placeholder="Ej. Riesgo de que la persona se sienta evaluada o responda para agradar."
                 className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
@@ -407,9 +493,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                 id="session-strategies"
                 rows={3}
                 value={draft.communicationStrategies}
-                onChange={(e) =>
-                  setDraft((p) => ({ ...p, communicationStrategies: e.target.value }))
-                }
+                onChange={(e) => {
+                  setValidationError(null);
+                  setDraft((p) => ({ ...p, communicationStrategies: e.target.value }));
+                }}
                 placeholder="Ej. Cuidar ritmo lento, validar antes de proponer ejercicios, metacomunicar si hay silencio."
                 className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
@@ -428,9 +515,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                 id="session-closing"
                 rows={2}
                 value={draft.closingAndAgreements}
-                onChange={(e) =>
-                  setDraft((p) => ({ ...p, closingAndAgreements: e.target.value }))
-                }
+                onChange={(e) => {
+                  setValidationError(null);
+                  setDraft((p) => ({ ...p, closingAndAgreements: e.target.value }));
+                }}
                 placeholder="Ej. Preguntar qué resultó útil hoy y verificar viabilidad de cualquier acuerdo."
                 className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
@@ -447,7 +535,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                 id="session-followup"
                 rows={2}
                 value={draft.followUpNotes}
-                onChange={(e) => setDraft((p) => ({ ...p, followUpNotes: e.target.value }))}
+                onChange={(e) => {
+                  setValidationError(null);
+                  setDraft((p) => ({ ...p, followUpNotes: e.target.value }));
+                }}
                 placeholder="Ej. Revisar red de apoyo familiar y pertinencia de interconsulta."
                 className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
@@ -461,7 +552,7 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                 className="inline-flex items-center gap-2 rounded-lg bg-[#0F4C5C] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0B3A47] whitespace-nowrap shrink-0"
               >
                 <Save className="h-4 w-4" aria-hidden="true" />
-                {savedNotice ? 'Guía guardada localmente' : 'Guardar guía local'}
+                {savedNotice && !storageError ? 'Guía guardada localmente' : 'Guardar guía local'}
               </button>
               <button
                 type="button"
@@ -483,7 +574,10 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
 
             <button
               type="button"
-              onClick={() => setDraft(createEmptyGuide())}
+              onClick={() => {
+                setDraft(createEmptyGuide());
+                setValidationError(null);
+              }}
               className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100 whitespace-nowrap shrink-0"
             >
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
@@ -505,7 +599,7 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
 
             {guides.length === 0 ? (
               <p className="mt-3 text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-                Aún no has guardado guías de sesión. Completa el formulario y pulsa «Guardar guía local» para conservar tus esquemas en este dispositivo.
+                Aún no has guardado guías de sesión. Completa al menos un campo del formulario y pulsa «Guardar guía local» para conservar tus esquemas en este dispositivo.
               </p>
             ) : (
               <ul className="mt-4 divide-y divide-slate-200 dark:divide-slate-800">
@@ -514,13 +608,14 @@ export const SessionPlannerModule: React.FC<{ onDataChange?: () => void }> = ({
                     <div className="flex items-start justify-between gap-2">
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          setValidationError(null);
                           setDraft({
                             ...g,
                             themesToExplore: g.themesToExplore.length ? g.themesToExplore : [''],
                             openQuestions: g.openQuestions.length ? g.openQuestions : [''],
-                          })
-                        }
+                          });
+                        }}
                         className="text-left group"
                       >
                         <p className="text-sm font-medium text-slate-900 group-hover:text-[#0F4C5C] dark:text-slate-100 dark:group-hover:text-teal-300">

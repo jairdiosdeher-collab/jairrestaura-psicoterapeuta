@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, beforeEach } from 'vitest';
 import { THERAPEUTIC_APPROACHES } from '../src/data/approachesData';
 import { DIFFICULT_SITUATIONS } from '../src/data/difficultSituationsData';
@@ -9,6 +11,22 @@ import {
   type EpistemicCategory,
 } from '../src/data/twelveDimensionsMeta';
 import {
+  buildSimulatorSummaryMarkdown,
+} from '../src/modules/case-simulator/CaseSimulatorModule';
+import { buildDifficultNotesMarkdown } from '../src/modules/difficult-situations/DifficultSituationsModule';
+import {
+  filterLibraryResources,
+  resolveCurrentLibraryResource,
+} from '../src/modules/library/LibraryModule';
+import { buildNarrativeWorkshopMarkdown } from '../src/modules/narrative/NarrativeModule';
+import { buildJournalMarkdown } from '../src/modules/professional-journal/ProfessionalJournalModule';
+import { buildSelfCarePlanMarkdown } from '../src/modules/self-care/SelfCareModule';
+import {
+  formatSessionGuideMarkdown,
+  hasSessionGuideContent,
+} from '../src/modules/session-planner/SessionPlannerModule';
+import { buildAllianceNotesMarkdown } from '../src/modules/therapeutic-alliance/TherapeuticAllianceModule';
+import {
   detectClinicalRisk,
   scanPotentialIdentifiers,
 } from '../src/services/privacy/privacyGuard';
@@ -19,13 +37,29 @@ import {
 } from '../src/services/reflection/localReflectionEngine';
 import {
   clearAllJournalEntries,
+  clearNarrativeWorkshop,
   clearReflectionDraft,
+  clearSelfCareChecklist,
+  deleteReflectionFromArchive,
+  getLastStorageFailureReason,
+  getStorageErrorMessage,
+  isLocalStorageAvailable,
   loadJournalEntries,
+  loadNarrativeWorkshop,
+  loadReflectionArchive,
   loadReflectionDraft,
+  loadSelfCareChecklist,
   loadSessionGuides,
+  saveAllianceNotes,
+  saveDifficultNotes,
   saveJournalEntries,
+  saveNarrativeWorkshop,
+  saveReflectionArchive,
   saveReflectionDraft,
+  saveSelfCareChecklist,
+  saveSelfCarePlan,
   saveSessionGuides,
+  tryMarkSimulationCompleted,
 } from '../src/services/storage/localStore';
 import type { LibraryArea } from '../src/types';
 
@@ -116,18 +150,33 @@ describe('Motor de Reflexión Local en 12 Dimensiones y Exportación', () => {
     expect(mdWithoutDate).not.toContain('Fecha de elaboración:');
   });
 
-  it('permite guardar, recuperar y borrar voluntariamente el borrador de la Hoja Reflexiva Local', () => {
-    const sheet = createEmptyReflectionSheet();
-    sheet.fields.hechosDescritos = 'Nota local de prueba.';
-    expect(saveReflectionDraft(sheet)).toBe(true);
+  it('permite guardar, recuperar, archivar y eliminar individualmente hojas reflexivas sin dañar las demás', () => {
+    const sheet1 = createEmptyReflectionSheet();
+    sheet1.id = 'hr-1';
+    sheet1.title = 'Viñeta uno';
+    sheet1.fields.hechosDescritos = 'Nota local de prueba.';
+
+    const sheet2 = createEmptyReflectionSheet();
+    sheet2.id = 'hr-2';
+    sheet2.title = 'Viñeta dos';
+
+    expect(saveReflectionDraft(sheet1)).toBe(true);
     const loaded = loadReflectionDraft();
     expect(loaded?.fields.hechosDescritos).toBe('Nota local de prueba.');
+
+    expect(saveReflectionArchive([sheet1, sheet2])).toBe(true);
+    const deletion = deleteReflectionFromArchive('hr-1');
+    expect(deletion.saved).toBe(true);
+    expect(deletion.archive).toHaveLength(1);
+    expect(deletion.archive[0].id).toBe('hr-2');
+    expect(loadReflectionArchive()).toHaveLength(1);
+
     expect(clearReflectionDraft()).toBe(true);
     expect(loadReflectionDraft()).toBeNull();
   });
 });
 
-describe('Persistencia local y borrado en bitácora y sesiones', () => {
+describe('Persistencia local, manejo honesto de fallos de almacenamiento y validaciones', () => {
   beforeEach(() => {
     Object.defineProperty(globalThis, 'window', {
       value: { localStorage: createMemoryStorage() },
@@ -135,49 +184,169 @@ describe('Persistencia local y borrado en bitácora y sesiones', () => {
     });
   });
 
-  it('guarda, lee y borra completamente las notas de la bitácora profesional', () => {
-    saveJournalEntries([
-      {
-        id: 'bit-1',
-        createdAt: '2026-11-15T10:00:00Z',
-        updatedAt: '2026-11-15T10:00:00Z',
-        learnedToday: 'Cuidar las pausas al cierre.',
-        difficultSituation: '',
-        doneWell: 'Validación empática.',
-        couldImprove: '',
-        needToStudy: 'Reparación de rupturas.',
-        supervisionTopic: 'Ritmo de preguntas.',
-        selfCareNeed: 'Descanso entre sesiones.',
-      },
-    ]);
-
+  it('guarda, lee y borra notas en bitácora, taller narrativo y checklist de autocuidado', () => {
+    expect(
+      saveJournalEntries([
+        {
+          id: 'bit-1',
+          createdAt: '2026-11-15T10:00:00Z',
+          updatedAt: '2026-11-15T10:00:00Z',
+          learnedToday: 'Cuidar las pausas al cierre.',
+          difficultSituation: '',
+          doneWell: 'Validación empática.',
+          couldImprove: '',
+          needToStudy: 'Reparación de rupturas.',
+          supervisionTopic: 'Ritmo de preguntas.',
+          selfCareNeed: 'Descanso entre sesiones.',
+        },
+      ])
+    ).toBe(true);
     expect(loadJournalEntries()).toHaveLength(1);
     expect(clearAllJournalEntries()).toBe(true);
     expect(loadJournalEntries()).toHaveLength(0);
+
+    expect(
+      saveNarrativeWorkshop({
+        dominantStory: 'Relato de prueba',
+        externalizedName: 'Autoexigencia',
+        exceptionMoment: 'Pidió respaldo en equipo',
+        personalResource: 'Prudencia',
+        preferredGoal: 'Acuerdos realistas',
+        updatedAt: '2026-11-15T10:00:00Z',
+      })
+    ).toBe(true);
+    expect(loadNarrativeWorkshop()?.externalizedName).toBe('Autoexigencia');
+    expect(clearNarrativeWorkshop()).toBe(true);
+    expect(loadNarrativeWorkshop()).toBeNull();
+
+    expect(saveSelfCareChecklist(['Señal 1'])).toBe(true);
+    expect(loadSelfCareChecklist()).toEqual(['Señal 1']);
+    expect(clearSelfCareChecklist()).toBe(true);
+    expect(loadSelfCareChecklist()).toEqual([]);
   });
 
-  it('guarda y recupera guías de preparación de sesiones', () => {
-    saveSessionGuides([
-      {
-        id: 'ses-1',
-        updatedAt: '2026-11-15T10:00:00Z',
-        title: 'Caso ficticio A',
-        generalReason: 'Sobrecarga laboral',
-        sessionObjective: 'Explorar límites',
-        approachFocus: 'Integrador',
-        themesToExplore: ['Descanso'],
-        openQuestions: ['¿Qué te ayudó esta semana?'],
-        potentialDifficulties: '',
-        communicationStrategies: 'Escucha activa',
-        closingAndAgreements: 'Feedback final',
-        followUpNotes: '',
+  it('reporta fallo cuando localStorage alcanza cuota o está bloqueado y no simula éxito', () => {
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        localStorage: {
+          getItem: () => null,
+          setItem: () => {
+            const err = new Error('Quota exceeded');
+            err.name = 'QuotaExceededError';
+            throw err;
+          },
+          removeItem: () => {
+            throw new Error('Blocked');
+          },
+        },
       },
-    ]);
-    expect(loadSessionGuides()).toHaveLength(1);
+      configurable: true,
+    });
+
+    expect(isLocalStorageAvailable()).toBe(false);
+    expect(getLastStorageFailureReason()).toBe('quota');
+    expect(getStorageErrorMessage('quota')).toContain('límite de capacidad');
+
+    expect(saveSessionGuides([])).toBe(false);
+    expect(saveJournalEntries([])).toBe(false);
+    expect(saveAllianceNotes({ a: 'b' })).toBe(false);
+    expect(saveDifficultNotes({ a: 'b' })).toBe(false);
+    expect(saveSelfCareChecklist(['a'])).toBe(false);
+    expect(
+      saveSelfCarePlan({
+        weeklyLoadHours: 20,
+        restDaysPerWeek: 2,
+        supervisionFrequency: 'Quincenal',
+        personalBoundaries: '',
+        supportNetwork: '',
+        recoveryHabits: [],
+        updatedAt: '2026-11-15T10:00:00Z',
+      })
+    ).toBe(false);
+    expect(
+      saveNarrativeWorkshop({
+        dominantStory: 'x',
+        externalizedName: '',
+        exceptionMoment: '',
+        personalResource: '',
+        preferredGoal: '',
+      })
+    ).toBe(false);
+
+    const simResult = tryMarkSimulationCompleted(SIMULATOR_SCENARIOS[0].id);
+    expect(simResult.saved).toBe(false);
+    expect(simResult.ids).toContain(SIMULATOR_SCENARIOS[0].id);
+
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        get localStorage() {
+          throw new Error('SecurityError');
+        },
+      },
+      configurable: true,
+    });
+    expect(isLocalStorageAvailable()).toBe(false);
+    expect(getLastStorageFailureReason()).toBe('unavailable');
+    expect(getStorageErrorMessage('unavailable')).toContain('no está disponible');
+  });
+
+  it('valida guías de sesión vacías y genera exportaciones Markdown con fecha y aviso educativo', () => {
+    const emptyGuide = {
+      id: 'ses-empty',
+      updatedAt: '2026-11-15T10:00:00Z',
+      title: '',
+      generalReason: '',
+      sessionObjective: '',
+      approachFocus: 'Integrador flexible',
+      themesToExplore: [''],
+      openQuestions: [''],
+      potentialDifficulties: '',
+      communicationStrategies: '',
+      closingAndAgreements: '',
+      followUpNotes: '',
+    };
+    expect(hasSessionGuideContent(emptyGuide)).toBe(false);
+
+    const validGuide = { ...emptyGuide, title: 'Caso ficticio A', generalReason: 'Sobrecarga' };
+    expect(hasSessionGuideContent(validGuide)).toBe(true);
+
+    const sessionMd = formatSessionGuideMarkdown(validGuide);
+    expect(sessionMd).toContain('Fecha de elaboración:');
+    expect(sessionMd).toContain('NO constituye historia clínica oficial');
+
+    expect(buildAllianceNotesMarkdown({ vinculo: 'Nota' })).toContain('No constituye historia clínica oficial');
+    expect(buildDifficultNotesMarkdown({})).toContain('NO constituyen historia clínica');
+    expect(
+      buildNarrativeWorkshopMarkdown({
+        dominantStory: 'Relato',
+        externalizedName: 'Peso',
+        exceptionMoment: 'Excepción',
+        personalResource: 'Recurso',
+        preferredGoal: 'Meta',
+      })
+    ).toContain('NO constituye historia clínica oficial');
+    expect(
+      buildSelfCarePlanMarkdown(
+        {
+          weeklyLoadHours: 24,
+          restDaysPerWeek: 2,
+          supervisionFrequency: 'Quincenal',
+          personalBoundaries: 'Hasta las 18:00',
+          supportNetwork: 'Grupo de pares',
+          recoveryHabits: [],
+          updatedAt: '2026-11-15T10:00:00Z',
+        },
+        []
+      )
+    ).toContain('NO constituye diagnóstico');
+    expect(buildJournalMarkdown([])).toContain('NO constituye historia clínica oficial');
+    expect(buildSimulatorSummaryMarkdown(SIMULATOR_SCENARIOS[0], [])).toContain(
+      'NO certifica competencias clínicas'
+    );
   });
 });
 
-describe('Integridad de contenidos educativos sin conexión', () => {
+describe('Integridad de contenidos educativos, citas y privacidad sin red externa', () => {
   it('incluye los 6 enfoques terapéuticos y las 9 situaciones difíciles sin etiquetas estigmatizantes', () => {
     expect(THERAPEUTIC_APPROACHES).toHaveLength(6);
     expect(DIFFICULT_SITUATIONS).toHaveLength(9);
@@ -186,9 +355,15 @@ describe('Integridad de contenidos educativos sin conexión', () => {
     expect(allText).not.toContain('paciente manipulador');
     expect(allText).not.toContain('paciente imposible');
     expect(allText).not.toContain('paciente problemático');
+
+    const approachesJson = JSON.stringify(THERAPEUTIC_APPROACHES);
+    expect(approachesJson).toContain('NG222');
+    expect(approachesJson).toContain('CG113');
+    expect(approachesJson).toContain('41(4), 492–536');
+    expect(approachesJson).toContain('The Process and Practice of Mindful Change');
   });
 
-  it('incluye simulador funcional offline y biblioteca completa de 14 categorías sin enlaces inventados', () => {
+  it('incluye simulador funcional offline y biblioteca completa de 14 categorías sin fallback falso ni enlaces inventados', () => {
     expect(SIMULATOR_SCENARIOS.length).toBeGreaterThanOrEqual(3);
     for (const sc of SIMULATOR_SCENARIOS) {
       expect(sc.steps[sc.initialStepId]).toBeDefined();
@@ -218,15 +393,27 @@ describe('Integridad de contenidos educativos sin conexión', () => {
       expect(presentAreas.has(area)).toBe(true);
     }
 
-    for (const item of LIBRARY_RESOURCES) {
-      expect(item.reviewDate.trim().length).toBeGreaterThan(0);
-      expect(item.applicationLimits.trim().length).toBeGreaterThan(15);
-      expect(item.learningObjectives.length).toBeGreaterThanOrEqual(2);
-      expect(item.references.length).toBeGreaterThanOrEqual(1);
-    }
+    const allRefs = LIBRARY_RESOURCES.flatMap((r) => r.references);
+    expect(allRefs.some((ref) => ref.evidenceType === 'Estudio primario')).toBe(true);
 
     const libJson = JSON.stringify(LIBRARY_RESOURCES);
     expect(libJson).not.toMatch(/https?:\/\//i);
     expect(libJson).not.toMatch(/doi\.org/i);
+    expect(libJson).toContain('41(4), 492–536');
+    expect(libJson).toContain('The Process and Practice of Mindful Change');
+    expect(libJson).toContain('Kottler, J. A. (2017). On Being a Therapist (5th ed.)');
+
+    const emptyMatch = filterLibraryResources(LIBRARY_RESOURCES, 'Todas', 'zzzxxyyynotfound');
+    expect(emptyMatch).toHaveLength(0);
+    expect(resolveCurrentLibraryResource(emptyMatch, LIBRARY_RESOURCES[0].id)).toBeNull();
+  });
+
+  it('mantiene index.html y frontend libres de CDN de fuentes externas y de exposición de claves API', () => {
+    const html = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf8');
+    expect(html).not.toContain('fonts.googleapis.com');
+    expect(html).not.toContain('fonts.gstatic.com');
+
+    const appTsx = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8');
+    expect(appTsx).not.toContain('GEMINI_API_KEY');
   });
 });

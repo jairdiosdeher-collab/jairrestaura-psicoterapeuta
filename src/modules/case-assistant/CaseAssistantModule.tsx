@@ -20,7 +20,11 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { ClinicalNoticeBanner, PiiWarningBox } from '../../components/ClinicalNoticeBanner';
+import {
+  ClinicalNoticeBanner,
+  PiiWarningBox,
+  StorageErrorBanner,
+} from '../../components/ClinicalNoticeBanner';
 import {
   EPISTEMIC_CATEGORY_STYLES,
   TWELVE_DIMENSIONS_META,
@@ -40,7 +44,9 @@ import {
 } from '../../services/reflection/localReflectionEngine';
 import {
   clearReflectionDraft,
+  deleteReflectionFromArchive,
   downloadTextFile,
+  getStorageErrorMessage,
   loadReflectionArchive,
   loadReflectionDraft,
   saveReflectionArchive,
@@ -87,7 +93,10 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
   const [hasSavedDraft, setHasSavedDraft] = useState<boolean>(() => Boolean(loadReflectionDraft()));
   const [expandedGuides, setExpandedGuides] = useState<Record<string, boolean>>({});
   const [localStatusMsg, setLocalStatusMsg] = useState<string | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [confirmDeleteArchiveId, setConfirmDeleteArchiveId] = useState<string | null>(null);
+  const [showArchiveList, setShowArchiveList] = useState(false);
   const [showMarkdownPreview, setShowMarkdownPreview] = useState(false);
   const [copiedMarkdown, setCopiedMarkdown] = useState(false);
 
@@ -135,14 +144,22 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
   const handleSaveDraft = () => {
     const updated = { ...sheet, updatedAt: new Date().toISOString() };
     setSheet(updated);
-    saveReflectionDraft(updated);
-    setHasSavedDraft(true);
 
+    const draftSaved = saveReflectionDraft(updated);
     const nextArchive = archive.some((item) => item.id === updated.id)
       ? archive.map((item) => (item.id === updated.id ? updated : item))
       : [updated, ...archive].slice(0, 15);
+    const archiveSaved = saveReflectionArchive(nextArchive);
     setArchive(nextArchive);
-    saveReflectionArchive(nextArchive);
+
+    if (!draftSaved || !archiveSaved) {
+      setStorageError(getStorageErrorMessage());
+      setLocalStatusMsg(null);
+      return;
+    }
+
+    setStorageError(null);
+    setHasSavedDraft(true);
     showTempLocalMsg('Borrador guardado voluntariamente en este dispositivo.');
   };
 
@@ -150,6 +167,7 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
     const saved = loadReflectionDraft();
     if (saved) {
       setSheet(saved);
+      setStorageError(null);
       showTempLocalMsg('Último borrador local recuperado.');
     } else {
       showTempLocalMsg('No hay un borrador previo guardado en este navegador.');
@@ -159,15 +177,33 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
   const handleNewSheet = () => {
     setSheet(createEmptyReflectionSheet());
     setConfirmClearAll(false);
+    setStorageError(null);
     showTempLocalMsg('Hoja reflexiva nueva lista para trabajar.');
   };
 
   const handleConfirmClearSheet = () => {
-    clearReflectionDraft();
+    const cleared = clearReflectionDraft();
     setHasSavedDraft(false);
     setSheet(createEmptyReflectionSheet());
     setConfirmClearAll(false);
-    showTempLocalMsg('Contenido de la hoja borrado de forma segura.');
+    if (!cleared) {
+      setStorageError(getStorageErrorMessage());
+      return;
+    }
+    setStorageError(null);
+    showTempLocalMsg('Borrador actual limpiado. Las demás hojas del historial permanecen intactas.');
+  };
+
+  const handleDeleteArchiveItem = (id: string) => {
+    const { archive: next, saved } = deleteReflectionFromArchive(id);
+    setArchive(next);
+    setConfirmDeleteArchiveId(null);
+    if (!saved) {
+      setStorageError(getStorageErrorMessage());
+      return;
+    }
+    setStorageError(null);
+    showTempLocalMsg('Hoja eliminada del historial local. Las demás hojas siguen intactas.');
   };
 
   const handleCopyMarkdown = async () => {
@@ -433,6 +469,11 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
               </p>
             )}
 
+            <StorageErrorBanner
+              message={storageError}
+              onDismiss={() => setStorageError(null)}
+            />
+
             {confirmClearAll && (
               <div
                 role="alertdialog"
@@ -532,7 +573,7 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
             </div>
 
             <div>
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <label
                   htmlFor="sheet-summary"
                   className="text-xs font-medium text-slate-700 dark:text-slate-300"
@@ -540,29 +581,94 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
                   Viñeta ficticia o anonimizada de partida (opcional)
                 </label>
                 {archive.length > 0 && (
-                  <select
-                    aria-label="Abrir borrador guardado previamente"
-                    defaultValue=""
-                    onChange={(e) => {
-                      const found = archive.find((a) => a.id === e.target.value);
-                      if (found) {
-                        setSheet(found);
-                        showTempLocalMsg('Hoja recuperada del historial local.');
-                      }
-                    }}
-                    className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-950"
-                  >
-                    <option value="" disabled>
-                      Abrir hoja guardada ({archive.length})
-                    </option>
-                    {archive.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.title || 'Sin título'} · {item.updatedAt.slice(0, 10)}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label="Abrir borrador guardado previamente"
+                      value={archive.some((a) => a.id === sheet.id) ? sheet.id : ''}
+                      onChange={(e) => {
+                        const chosenId = e.target.value;
+                        const found = archive.find((a) => a.id === chosenId);
+                        if (found) {
+                          setSheet({
+                            ...found,
+                            fields: { ...found.fields },
+                          });
+                          showTempLocalMsg('Hoja recuperada del historial local.');
+                        }
+                      }}
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-950"
+                    >
+                      <option value="">
+                        Seleccionar hoja archivada ({archive.length})
                       </option>
-                    ))}
-                  </select>
+                      {archive.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.title || 'Sin título'} · {item.updatedAt.slice(0, 10)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setShowArchiveList((v) => !v)}
+                      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                      {showArchiveList ? 'Ocultar historial' : 'Gestionar historial'}
+                    </button>
+                  </div>
                 )}
               </div>
+
+              {showArchiveList && archive.length > 0 && (
+                <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
+                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                    Hojas archivadas localmente ({archive.length})
+                  </p>
+                  <ul className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {archive.map((item) => (
+                      <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2 first:pt-0 last:pb-0 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSheet({ ...item, fields: { ...item.fields } });
+                            showTempLocalMsg('Hoja cargada desde el historial local.');
+                          }}
+                          className="text-left font-medium text-slate-800 hover:text-[#0F4C5C] dark:text-slate-200 dark:hover:text-teal-300"
+                        >
+                          {item.title || 'Sin título'} · {item.updatedAt.slice(0, 10)}
+                        </button>
+                        {confirmDeleteArchiveId === item.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteArchiveItem(item.id)}
+                              className="rounded bg-red-700 px-2 py-1 font-medium text-white hover:bg-red-800"
+                            >
+                              Confirmar eliminar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteArchiveId(null)}
+                              className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteArchiveId(item.id)}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40"
+                          >
+                            <Trash2 className="h-3 w-3" aria-hidden="true" />
+                            Eliminar
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <textarea
                 id="sheet-summary"
                 rows={2}
@@ -720,9 +826,9 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
 
       {/* WORKSPACE MODE 2: ASISTENTE CON IA OPCIONAL */}
       {workspaceMode === 'ai' && (
-        <div className="no-print space-y-5">
+        <div className="space-y-5">
           {!aiStatus.configured && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
               <div className="flex items-start gap-2.5">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 <div>
@@ -747,7 +853,7 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
             <form
               onSubmit={handleOpenAiConfirmation}
-              className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 lg:col-span-5 sm:p-6"
+              className="no-print space-y-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 lg:col-span-5 sm:p-6"
             >
               <div>
                 <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -846,9 +952,9 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
               </button>
             </form>
 
-            <div className="space-y-4 lg:col-span-7">
+            <div className="space-y-4 lg:col-span-7 print:col-span-12">
               {!result && !loading && (
-                <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+                <div className="no-print rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                   <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                     Salida estructurada en 12 dimensiones
                   </h3>
@@ -877,7 +983,7 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
               )}
 
               {loading && (
-                <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+                <div className="no-print space-y-3 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
                   <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
                     Organizando reflexión clínica responsable...
                   </p>
@@ -898,7 +1004,7 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
               )}
 
               {result?.status === 'error' && (
-                <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+                <div className="no-print space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
                   <div className="flex items-start gap-2.5">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                     <div className="space-y-1">
@@ -920,7 +1026,23 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
 
               {result?.status === 'ok' && result.analysis && (
                 <div className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                  {/* Print-only header for AI analysis */}
+                  <div className="hidden print-only space-y-2 border-b border-slate-300 pb-4">
+                    <p className="text-xs uppercase tracking-wide text-slate-600">
+                      JAIRRESTAURA · Análisis reflexivo en 12 dimensiones (Material educativo)
+                    </p>
+                    <h1 className="text-xl font-bold text-slate-900">
+                      Reflexión de viñeta anonimizada — Lente: {approachPreference}
+                    </h1>
+                    <p className="text-xs text-slate-700">
+                      Fecha de elaboración: {new Date().toISOString().slice(0, 10)}
+                    </p>
+                    <p className="text-xs font-medium text-slate-800">
+                      Advertencia: {result.epistemicNotice || 'Material educativo de apoyo reflexivo. No constituye diagnóstico clínico, prescripción ni historia clínica oficial.'}
+                    </p>
+                  </div>
+
+                  <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                     <div className="flex items-start gap-2">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-300" />
                       <div>
@@ -940,6 +1062,14 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
                       </button>
                       <button
                         type="button"
+                        onClick={handlePrintPdf}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-900 hover:bg-emerald-50 dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-200 whitespace-nowrap shrink-0"
+                      >
+                        <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+                        Imprimir / PDF
+                      </button>
+                      <button
+                        type="button"
                         onClick={handleExportAiAnalysis}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-900 hover:bg-emerald-50 dark:border-emerald-800 dark:bg-slate-900 dark:text-emerald-200 whitespace-nowrap shrink-0"
                       >
@@ -956,7 +1086,7 @@ export const CaseAssistantModule: React.FC<{ aiStatus: AiStatusInfo }> = ({ aiSt
                       return (
                         <section
                           key={dim.key}
-                          className={`rounded-xl border p-5 ${style.surfaceClass}`}
+                          className={`print-clean-break rounded-xl border p-5 ${style.surfaceClass}`}
                         >
                           <div className="flex flex-wrap items-baseline justify-between gap-2">
                             <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">

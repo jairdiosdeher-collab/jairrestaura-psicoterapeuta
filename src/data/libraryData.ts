@@ -70,6 +70,11 @@ export const LIBRARY_RESOURCES: LibraryResource[] = [
         evidenceType: 'Revisión sistemática',
         verificationNote: 'Compendio meta-analítico del grupo de trabajo de la APA sobre relación terapéutica.',
       },
+      {
+        citation: 'Horvath, A. O., & Greenberg, L. S. (1989). Development and validation of the Working Alliance Inventory. Journal of Counseling Psychology, 36(2), 223–233.',
+        evidenceType: 'Estudio primario',
+        verificationNote: 'Estudio empírico original de desarrollo y validación psicométrica del inventario de alianza de trabajo.',
+      },
     ],
   },
   {
@@ -186,9 +191,9 @@ export const LIBRARY_RESOURCES: LibraryResource[] = [
     ],
     references: [
       {
-        citation: 'Carr, A. (2019). Couple therapy, family therapy and systemic interventions for adult-focused problems: the current evidence base. Journal of Family Therapy.',
+        citation: 'Carr, A. (2019). Couple therapy, family therapy and systemic interventions for adult-focused problems: the current evidence base. Journal of Family Therapy, 41(4), 492–536.',
         evidenceType: 'Revisión sistemática',
-        verificationNote: 'Revisión académica verificable sobre eficacia de intervenciones sistémicas.',
+        verificationNote: 'Revisión académica verificable sobre eficacia de intervenciones sistémicas en adultos.',
       },
     ],
   },
@@ -273,7 +278,7 @@ export const LIBRARY_RESOURCES: LibraryResource[] = [
     ],
     references: [
       {
-        citation: 'Hayes, S. C., Strosahl, K. D., & Wilson, K. G. (2012). Acceptance and Commitment Therapy (2nd ed.). Guilford Press.',
+        citation: 'Hayes, S. C., Strosahl, K. D., & Wilson, K. G. (2012). Acceptance and Commitment Therapy: The Process and Practice of Mindful Change (2nd ed.). Guilford Press.',
         evidenceType: 'Texto académico',
         verificationNote: 'Manual estándar verificable de ACT.',
       },
@@ -393,9 +398,14 @@ export const LIBRARY_RESOURCES: LibraryResource[] = [
     ],
     references: [
       {
-        citation: 'Kottler, J. A. (2017/2022). On Being a Therapist / Los retos de ser terapeuta (referencia temática general; texto redactado de forma original).',
+        citation: 'Kottler, J. A. (2017). On Being a Therapist (5th ed.). Oxford University Press.',
         evidenceType: 'Texto académico',
-        verificationNote: 'Obra clásica citada solo como inspiración temática general sobre desafíos del terapeuta.',
+        verificationNote: 'Obra académica verificable sobre los retos personales y profesionales del ejercicio psicoterapéutico.',
+      },
+      {
+        citation: 'Rupert, P. A., & Morgan, D. J. (2005). Work setting and burnout among professional psychologists. Professional Psychology: Research and Practice, 36(5), 544–550.',
+        evidenceType: 'Estudio primario',
+        verificationNote: 'Estudio empírico sobre carga laboral, contexto de práctica y desgaste profesional en psicólogos.',
       },
     ],
   },

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { BookMarked, Search } from 'lucide-react';
+import { BookMarked, RotateCcw, Search } from 'lucide-react';
 import { LIBRARY_RESOURCES } from '../../data/libraryData';
-import type { LibraryArea } from '../../types';
+import type { LibraryArea, LibraryResource } from '../../types';
 
 const AREAS: ('Todas' | LibraryArea)[] = [
   'Todas',
@@ -21,29 +21,53 @@ const AREAS: ('Todas' | LibraryArea)[] = [
   'Investigación basada en evidencia',
 ];
 
+export function filterLibraryResources(
+  resources: LibraryResource[],
+  selectedArea: 'Todas' | LibraryArea,
+  query: string
+): LibraryResource[] {
+  const q = query.trim().toLowerCase();
+  return resources.filter((res) => {
+    if (selectedArea !== 'Todas' && res.area !== selectedArea) return false;
+    if (!q) return true;
+    return (
+      res.title.toLowerCase().includes(q) ||
+      res.description.toLowerCase().includes(q) ||
+      res.area.toLowerCase().includes(q) ||
+      res.sections.some(
+        (s) => s.heading.toLowerCase().includes(q) || s.body.toLowerCase().includes(q)
+      )
+    );
+  });
+}
+
+export function resolveCurrentLibraryResource(
+  filtered: LibraryResource[],
+  activeId: string
+): LibraryResource | null {
+  if (filtered.length === 0) return null;
+  return filtered.find((r) => r.id === activeId) ?? filtered[0];
+}
+
 export const LibraryModule: React.FC = () => {
   const [selectedArea, setSelectedArea] = useState<'Todas' | LibraryArea>('Todas');
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState<string>(LIBRARY_RESOURCES[0].id);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return LIBRARY_RESOURCES.filter((res) => {
-      if (selectedArea !== 'Todas' && res.area !== selectedArea) return false;
-      if (!q) return true;
-      return (
-        res.title.toLowerCase().includes(q) ||
-        res.description.toLowerCase().includes(q) ||
-        res.area.toLowerCase().includes(q) ||
-        res.sections.some(
-          (s) => s.heading.toLowerCase().includes(q) || s.body.toLowerCase().includes(q)
-        )
-      );
-    });
-  }, [selectedArea, query]);
+  const filtered = useMemo(
+    () => filterLibraryResources(LIBRARY_RESOURCES, selectedArea, query),
+    [selectedArea, query]
+  );
 
-  const current =
-    filtered.find((r) => r.id === activeId) ?? filtered[0] ?? LIBRARY_RESOURCES[0];
+  const current = useMemo(
+    () => resolveCurrentLibraryResource(filtered, activeId),
+    [filtered, activeId]
+  );
+
+  const resetFilters = () => {
+    setQuery('');
+    setSelectedArea('Todas');
+  };
 
   return (
     <div className="space-y-6">
@@ -88,12 +112,24 @@ export const LibraryModule: React.FC = () => {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <aside className="space-y-2 lg:col-span-4">
           {filtered.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-              No se encontraron recursos para «{query}».
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              <p>
+                No se encontraron recursos
+                {query.trim() ? ` para «${query.trim()}»` : ''}
+                {selectedArea !== 'Todas' ? ` en «${selectedArea}»` : ''}.
+              </p>
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                Limpiar filtros
+              </button>
             </div>
           ) : (
             filtered.map((res) => {
-              const active = res.id === current.id;
+              const active = current?.id === res.id;
               return (
                 <button
                   key={res.id}
@@ -119,12 +155,15 @@ export const LibraryModule: React.FC = () => {
           )}
         </aside>
 
-        {current && (
+        {current ? (
           <article className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 lg:col-span-8 sm:p-6">
             <div className="flex items-start gap-3">
               <BookMarked className="mt-1 h-5 w-5 shrink-0 text-[#0F4C5C] dark:text-teal-300" />
               <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs font-medium text-[#0F4C5C] dark:text-teal-300">
+                  Contenido educativo original (JAIRRESTAURA)
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                   {current.area} · {current.evidenceType} · Lectura de {current.readingTime} · Revisión: {current.reviewDate}
                 </p>
                 <h3 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
@@ -167,7 +206,7 @@ export const LibraryModule: React.FC = () => {
 
             <div className="border-t border-slate-200 pt-4 dark:border-slate-800">
               <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                Referencias verificables y nivel de evidencia
+                Fuentes académicas y guías verificables
               </h4>
               <ul className="mt-2.5 space-y-2">
                 {current.references.map((ref, idx) => (
@@ -177,13 +216,30 @@ export const LibraryModule: React.FC = () => {
                   >
                     <p className="font-medium text-slate-900 dark:text-slate-100">{ref.citation}</p>
                     <p className="mt-0.5 text-slate-500 dark:text-slate-400">
-                      {ref.evidenceType} · {ref.verificationNote}
+                      Nivel de fuente: {ref.evidenceType} · {ref.verificationNote}
                     </p>
                   </li>
                 ))}
               </ul>
             </div>
           </article>
+        ) : (
+          <div className="flex flex-col items-start justify-center space-y-3 rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 lg:col-span-8">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Ningún artículo coincide con el filtro actual
+            </h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Prueba otra palabra clave o restablece el filtro de área temática para ver nuevamente los 14 recursos de la biblioteca.
+            </p>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#0F4C5C] px-3.5 py-2 text-xs font-medium text-white hover:bg-[#0B3A47]"
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              Limpiar filtros y ver todo
+            </button>
+          </div>
         )}
       </div>
     </div>

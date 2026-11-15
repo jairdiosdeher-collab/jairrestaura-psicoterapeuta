@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, HardDrive, ShieldAlert } from 'lucide-react';
 import type { PiiFinding } from '../services/privacy/privacyGuard';
 
 interface ClinicalNoticeBannerProps {
@@ -66,6 +66,46 @@ export const PiiWarningBox: React.FC<PiiWarningBoxProps> = ({ findings }) => {
             ))}
           </ul>
         </div>
+      </div>
+    </div>
+  );
+};
+
+interface StorageErrorBannerProps {
+  message: string | null;
+  onDismiss?: () => void;
+}
+
+export const StorageErrorBanner: React.FC<StorageErrorBannerProps> = ({
+  message,
+  onDismiss,
+}) => {
+  if (!message) return null;
+
+  return (
+    <div
+      role="alert"
+      className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900/70 dark:bg-red-950/40 dark:text-red-100"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <HardDrive className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" aria-hidden="true" />
+          <div className="space-y-1">
+            <p className="font-semibold">
+              No se pudo guardar en el almacenamiento local del navegador
+            </p>
+            <p className="text-xs leading-relaxed opacity-90">{message}</p>
+          </div>
+        </div>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100 dark:text-red-200 dark:hover:bg-red-900/40 shrink-0"
+          >
+            Ocultar
+          </button>
+        )}
       </div>
     </div>
   );

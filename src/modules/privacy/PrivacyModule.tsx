@@ -1,18 +1,29 @@
 import React, { useState } from 'react';
 import { HardDrive, Lock, ServerOff, ShieldCheck, Trash2, UserX } from 'lucide-react';
-import { ClinicalNoticeBanner } from '../../components/ClinicalNoticeBanner';
+import { ClinicalNoticeBanner, StorageErrorBanner } from '../../components/ClinicalNoticeBanner';
 import { SAFETY_PROTOCOL_GUIDANCE } from '../../services/privacy/privacyGuard';
-import { clearAllLocalWorkspaceData } from '../../services/storage/localStore';
+import {
+  clearAllLocalWorkspaceData,
+  getLastStorageFailureReason,
+  getStorageErrorMessage,
+} from '../../services/storage/localStore';
 
 export const PrivacyModule: React.FC<{ onDataCleared?: () => void }> = ({
   onDataCleared,
 }) => {
   const [confirmReset, setConfirmReset] = useState(false);
   const [clearedDone, setClearedDone] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   const handleFullReset = () => {
-    clearAllLocalWorkspaceData();
+    const ok = clearAllLocalWorkspaceData();
     setConfirmReset(false);
+    if (!ok) {
+      setClearedDone(false);
+      setStorageError(getStorageErrorMessage(getLastStorageFailureReason()));
+      return;
+    }
+    setStorageError(null);
     setClearedDone(true);
     onDataCleared?.();
     window.setTimeout(() => setClearedDone(false), 3200);
@@ -28,7 +39,7 @@ export const PrivacyModule: React.FC<{ onDataCleared?: () => void }> = ({
           CLAROPRIVACIDAD
         </h2>
         <p className="max-w-3xl text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-          Explicación clara y verificable sobre cómo protege JAIRRESTAURA tu práctica reflexiva, qué permanece en tu dispositivo, qué ocurre si decides usar IA y cómo mantener resguardada la identidad de cualquier consultante.
+          Explicación clara y verificable sobre cómo protege JAIRRESTAURA tu práctica reflexiva, qué permanece en tu dispositivo, qué solicitudes realiza la aplicación y cómo mantener resguardada la identidad de cualquier consultante.
         </p>
       </div>
 
@@ -37,6 +48,8 @@ export const PrivacyModule: React.FC<{ onDataCleared?: () => void }> = ({
         title="Advertencia permanente de anonimización"
         body="Utiliza exclusivamente viñetas ficticias o rigurosamente anonimizadas. No introduzcas historias clínicas, nombres, documentos ni información que permita identificar pacientes."
       />
+
+      <StorageErrorBanner message={storageError} onDismiss={() => setStorageError(null)} />
 
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
@@ -48,13 +61,13 @@ export const PrivacyModule: React.FC<{ onDataCleared?: () => void }> = ({
           </div>
           <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
             <li>
-              Tus borradores de la <strong>Hoja Reflexiva Local en 12 Dimensiones</strong>, guías de sesión, entradas de bitácora, apuntes de alianza y plan de autocuidado se guardan exclusivamente en tu navegador (<code className="font-mono text-xs">localStorage</code>) si tú decides guardarlos.
+              Tus borradores y archivo de la <strong>Hoja Reflexiva Local en 12 Dimensiones</strong>, guías de sesión, entradas de bitácora, apuntes de alianza y situaciones difíciles, taller de narrativa, checklist y plan de autocuidado, progreso del simulador y preferencia de tema se guardan exclusivamente en tu navegador (<code className="font-mono text-xs">localStorage</code>).
             </li>
             <li>
-              La biblioteca educativa y el simulador de casos ficticios funcionan localmente sin enviar datos a terceros.
+              La biblioteca educativa, el banco de preguntas/metáforas, los enfoques integradores y el simulador de casos ficticios funcionan localmente sin enviar textos ni notas a terceros.
             </li>
             <li>
-              <strong>No existe almacenamiento centralizado de historias clínicas</strong> ni analítica que capture el contenido que escribes.
+              La interfaz utiliza tipografía nativa del dispositivo: no realiza descargas de fuentes desde Google Fonts ni carga scripts analíticos o rastreadores externos.
             </li>
           </ul>
         </section>
@@ -63,18 +76,18 @@ export const PrivacyModule: React.FC<{ onDataCleared?: () => void }> = ({
           <div className="flex items-center gap-2">
             <Lock className="h-5 w-5 text-[#0F4C5C] dark:text-teal-300" aria-hidden="true" />
             <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              2. Qué información se envía a la IA y cuándo
+              2. Qué solicitudes de red existen y cuándo se envía texto
             </h3>
           </div>
           <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
             <li>
-              <strong>Nunca</strong> se envía información automáticamente al escribir o al usar el Motor Local de 12 Dimensiones.
+              Al abrir la aplicación se consulta únicamente el estado técnico de disponibilidad (<code className="font-mono text-xs">GET /api/ai-status</code>), sin enviar ningún texto ni dato del usuario.
             </li>
             <li>
-              El envío ocurre <strong>únicamente</strong> cuando eliges la pestaña «Asistente con IA (Opcional)», superas el detector local de identificadores y marcas explícitamente la casilla del modal de confirmación.
+              <strong>Nunca</strong> se envía información clínica o reflexiva automáticamente al escribir o al trabajar en la Hoja Reflexiva Local, la Bitácora, las Sesiones, Alianza o Narrativa.
             </li>
             <li>
-              Solo se remite al servidor proxy seguro el texto mínimo de la viñeta anonimizada, tus notas opcionales y la lente teórica elegida. No se guardan en registros de errores ni en cachés públicas del navegador.
+              El envío a IA ocurre <strong>únicamente</strong> cuando eliges la pestaña «Asistente con IA (Opcional)», superas el detector local de identificadores y marcas explícitamente la casilla del modal de confirmación antes de enviar al proxy seguro del propio servidor (<code className="font-mono text-xs">POST /api/case-assistant/analyze</code>).
             </li>
           </ul>
         </section>
@@ -97,15 +110,15 @@ export const PrivacyModule: React.FC<{ onDataCleared?: () => void }> = ({
           <div className="flex items-center gap-2">
             <ServerOff className="h-5 w-5 text-[#0F4C5C] dark:text-teal-300" aria-hidden="true" />
             <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              4. Qué sucede si la IA está desconectada y límites del navegador
+              4. IA desconectada y fallos o límites del almacenamiento local
             </h3>
           </div>
           <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
             <li>
-              Si el motor de IA no está configurado, se agota una cuota gratuita o no tienes conexión a internet, la plataforma sigue 100 % operativa con la Hoja Reflexiva Local, la Biblioteca, la Bitácora y el Simulador Ficticio.
+              Si el motor de IA no está configurado, se agota una cuota o no tienes conexión, la plataforma sigue operativa con la Hoja Reflexiva Local, Biblioteca, Bitácora y Simulador.
             </li>
             <li>
-              <strong>Limitación del almacenamiento local:</strong> los borradores guardados en el navegador pueden perderse si limpias la caché/datos del sitio, usas modo incógnito o cambias de equipo. Exporta tus documentos en Markdown (`.md`) o PDF cuando desees conservarlos.
+              <strong>Cuando <code className="font-mono text-xs">localStorage</code> falla o está lleno/bloqueado:</strong> la aplicación te avisará explícitamente (nunca simulará que guardó), conservará tu contenido visible en pantalla durante la sesión y te permitirá copiarlo o exportarlo manualmente en Markdown (<code className="font-mono text-xs">.md</code>), JSON o PDF.
             </li>
           </ul>
         </section>
@@ -130,7 +143,7 @@ export const PrivacyModule: React.FC<{ onDataCleared?: () => void }> = ({
           6. Cómo borrar todos los datos locales en este navegador
         </h3>
         <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-          Puedes eliminar de forma inmediata todas las hojas reflexivas de 12 dimensiones, guías de sesión, entradas de bitácora, plan de autocuidado y progreso del simulador guardados en este equipo:
+          Puedes eliminar de forma inmediata todas las hojas reflexivas de 12 dimensiones (borrador y archivo), guías de sesión, bitácora, apuntes de alianza y situaciones difíciles, taller narrativo, checklist y plan de autocuidado, progreso del simulador y preferencia de tema guardados en este equipo:
         </p>
 
         {clearedDone && (
@@ -150,7 +163,7 @@ export const PrivacyModule: React.FC<{ onDataCleared?: () => void }> = ({
           </button>
         ) : (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-950 dark:border-red-900 dark:bg-red-950/50 dark:text-red-100">
-            <span>¿Confirmas borrar hojas reflexivas, guías, bitácora, plan de autocuidado y progreso local?</span>
+            <span>¿Confirmas borrar todos los datos locales y preferencias de JAIRRESTAURA en este navegador?</span>
             <button
               type="button"
               onClick={handleFullReset}

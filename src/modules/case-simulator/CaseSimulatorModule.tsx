@@ -1,12 +1,56 @@
 import React, { useState } from 'react';
-import { ArrowRight, CheckCircle2, GraduationCap, RotateCcw } from 'lucide-react';
-import { ClinicalNoticeBanner } from '../../components/ClinicalNoticeBanner';
+import { ArrowRight, CheckCircle2, Download, GraduationCap, RotateCcw } from 'lucide-react';
+import { ClinicalNoticeBanner, StorageErrorBanner } from '../../components/ClinicalNoticeBanner';
 import { SIMULATOR_SCENARIOS } from '../../data/simulatorScenariosData';
 import {
+  downloadTextFile,
+  getLastStorageFailureReason,
+  getStorageErrorMessage,
   loadCompletedSimulations,
-  markSimulationCompleted,
+  tryMarkSimulationCompleted,
 } from '../../services/storage/localStore';
-import type { SimulatorOption } from '../../types';
+import type { SimulatorOption, SimulatorScenario } from '../../types';
+
+export interface SimulatorDecisionRecord {
+  stepId: string;
+  stageLabel: string;
+  clientStatement: string;
+  chosenLabel: string;
+  responseText: string;
+  impactLabel: string;
+  feedback: string;
+  clientReaction: string;
+}
+
+export function buildSimulatorSummaryMarkdown(
+  scenario: SimulatorScenario,
+  history: SimulatorDecisionRecord[]
+): string {
+  const stepBlocks = history.map((item, idx) =>
+    [
+      `### ${idx + 1}. ${item.stageLabel}`,
+      `- **Expresión ficticia:** ${item.clientStatement}`,
+      `- **Respuesta elegida (${item.chosenLabel}):** ${item.responseText}`,
+      `- **Impacto formativo (${item.impactLabel}):** ${item.feedback}`,
+      `- **Reacción en el escenario:** ${item.clientReaction}`,
+      '',
+    ].join('\n')
+  );
+
+  return [
+    `# JAIRRESTAURA · Resumen de Práctica en Simulador Ficticio`,
+    `Escenario: ${scenario.title}`,
+    `Foco formativo: ${scenario.skillFocus}`,
+    `Fecha de práctica: ${new Date().toLocaleDateString('es-ES')}`,
+    '',
+    '> **Aviso educativo:** Escenario completamente ficticio diseñado solo con fines formativos. NO certifica competencias clínicas ni sustituye supervisión profesional.',
+    '',
+    '## Recorrido de decisiones',
+    ...(stepBlocks.length > 0 ? stepBlocks : ['_Sin pasos registrados._']),
+    '## Claves de reflexión profesional',
+    ...scenario.closingReflection.map((item) => `- ${item}`),
+  ].join('\n');
+}
 
 export const CaseSimulatorModule: React.FC<{ onDataChange?: () => void }> = ({
   onDataChange,
@@ -16,10 +60,12 @@ export const CaseSimulatorModule: React.FC<{ onDataChange?: () => void }> = ({
     SIMULATOR_SCENARIOS[0].initialStepId
   );
   const [chosenOption, setChosenOption] = useState<SimulatorOption | null>(null);
+  const [decisionHistory, setDecisionHistory] = useState<SimulatorDecisionRecord[]>([]);
   const [finished, setFinished] = useState(false);
   const [completedIds, setCompletedIds] = useState<string[]>(() =>
     loadCompletedSimulations()
   );
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   const scenario =
     SIMULATOR_SCENARIOS.find((s) => s.id === selectedScenarioId) ?? SIMULATOR_SCENARIOS[0];
@@ -30,6 +76,7 @@ export const CaseSimulatorModule: React.FC<{ onDataChange?: () => void }> = ({
     setSelectedScenarioId(next.id);
     setCurrentStepId(next.initialStepId);
     setChosenOption(null);
+    setDecisionHistory([]);
     setFinished(false);
   };
 
@@ -38,22 +85,50 @@ export const CaseSimulatorModule: React.FC<{ onDataChange?: () => void }> = ({
   };
 
   const handleAdvance = () => {
-    if (!chosenOption) return;
+    if (!chosenOption || !step) return;
+    const record: SimulatorDecisionRecord = {
+      stepId: step.id,
+      stageLabel: step.stageLabel,
+      clientStatement: step.clientStatement,
+      chosenLabel: chosenOption.label,
+      responseText: chosenOption.responseText,
+      impactLabel: chosenOption.impactLabel,
+      feedback: chosenOption.feedback,
+      clientReaction: chosenOption.clientReaction,
+    };
+    setDecisionHistory((prev) => [...prev, record]);
+
     if (chosenOption.nextStepId && scenario.steps[chosenOption.nextStepId]) {
       setCurrentStepId(chosenOption.nextStepId);
       setChosenOption(null);
     } else {
       setFinished(true);
-      const updated = markSimulationCompleted(scenario.id);
-      setCompletedIds(updated);
+      const { ids, saved } = tryMarkSimulationCompleted(scenario.id);
+      setCompletedIds(ids);
       onDataChange?.();
+      if (!saved) {
+        setStorageError(getStorageErrorMessage(getLastStorageFailureReason()));
+      } else {
+        setStorageError(null);
+      }
     }
   };
 
   const handleRestart = () => {
     setCurrentStepId(scenario.initialStepId);
     setChosenOption(null);
+    setDecisionHistory([]);
     setFinished(false);
+  };
+
+  const handleExportSummary = () => {
+    const ok = downloadTextFile(
+      `simulador-${scenario.id}-${Date.now()}.md`,
+      buildSimulatorSummaryMarkdown(scenario, decisionHistory)
+    );
+    if (!ok) {
+      setStorageError('No se pudo generar la descarga del resumen en este navegador.');
+    }
   };
 
   return (
@@ -75,6 +150,8 @@ export const CaseSimulatorModule: React.FC<{ onDataChange?: () => void }> = ({
         body="Todos los escenarios son ficticios y diseñados únicamente con fines pedagógicos. No utilizan casos reales ni otorgan acreditación o habilitación profesional."
         variant="info"
       />
+
+      <StorageErrorBanner message={storageError} onDismiss={() => setStorageError(null)} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <aside className="space-y-2.5 lg:col-span-4">
@@ -214,11 +291,53 @@ export const CaseSimulatorModule: React.FC<{ onDataChange?: () => void }> = ({
               )}
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
-                <CheckCircle2 className="h-5 w-5" />
-                <h4 className="text-base font-semibold">Escenario completado</h4>
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle2 className="h-5 w-5" />
+                  <h4 className="text-base font-semibold">Escenario completado</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportSummary}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  Exportar resumen (.md)
+                </button>
               </div>
+
+              {decisionHistory.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                    Resumen del recorrido realizado ({decisionHistory.length} momento{decisionHistory.length === 1 ? '' : 's'}):
+                  </p>
+                  <ol className="space-y-2.5">
+                    {decisionHistory.map((item, idx) => (
+                      <li
+                        key={`${item.stepId}-${idx}`}
+                        className="rounded-xl border border-slate-200 bg-slate-50/80 p-3.5 text-xs leading-relaxed dark:border-slate-800 dark:bg-slate-950/70"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="font-semibold text-slate-900 dark:text-slate-100">
+                            {idx + 1}. {item.stageLabel}
+                          </span>
+                          <span className="font-medium text-[#0F4C5C] dark:text-teal-300">
+                            {item.chosenLabel} · {item.impactLabel}
+                          </span>
+                        </div>
+                        <p className="mt-1.5 text-slate-700 dark:text-slate-300">
+                          <strong>Intervención elegida:</strong> {item.responseText}
+                        </p>
+                        <p className="mt-1 text-slate-600 dark:text-slate-400">
+                          <strong>Retroalimentación:</strong> {item.feedback}
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
                   Claves de reflexión profesional:

@@ -42,9 +42,14 @@ export const THERAPEUTIC_APPROACHES: TherapeuticApproach[] = [
         note: 'Obra introductoria de referencia verificable en formación cognitivo-conductual.',
       },
       {
-        citation: 'NICE – National Institute for Health and Care Excellence. Guías clínicas para depresión y trastornos de ansiedad en adultos.',
+        citation: 'National Institute for Health and Care Excellence [NICE] (2022). Depression in adults: treatment and management (NICE Guideline NG222).',
         evidenceType: 'Guía clínica',
-        note: 'Síntesis institucional basada en revisión sistemática de ensayos clínicos.',
+        note: 'Guía institucional basada en revisión sistemática para depresión en adultos.',
+      },
+      {
+        citation: 'National Institute for Health and Care Excellence [NICE] (2011, act. 2020). Generalised anxiety disorder and panic disorder in adults: management (Clinical Guideline CG113).',
+        evidenceType: 'Guía clínica',
+        note: 'Guía institucional basada en revisión sistemática para ansiedad generalizada y pánico en adultos.',
       },
     ],
   },
@@ -136,7 +141,7 @@ export const THERAPEUTIC_APPROACHES: TherapeuticApproach[] = [
         note: 'Referencia clásica de terapia familiar estructural.',
       },
       {
-        citation: 'Carr, A. (2019). Couple therapy, family therapy and systemic interventions for adult-focused problems: the current evidence base. Journal of Family Therapy.',
+        citation: 'Carr, A. (2019). Couple therapy, family therapy and systemic interventions for adult-focused problems: the current evidence base. Journal of Family Therapy, 41(4), 492–536.',
         evidenceType: 'Revisión sistemática',
         note: 'Síntesis académica sobre evidencia empírica en intervenciones sistémicas.',
       },
@@ -272,7 +277,7 @@ export const THERAPEUTIC_APPROACHES: TherapeuticApproach[] = [
     ],
     references: [
       {
-        citation: 'Hayes, S. C., Strosahl, K. D., & Wilson, K. G. (2012). Acceptance and Commitment Therapy (2nd ed.). Guilford Press.',
+        citation: 'Hayes, S. C., Strosahl, K. D., & Wilson, K. G. (2012). Acceptance and Commitment Therapy: The Process and Practice of Mindful Change (2nd ed.). Guilford Press.',
         evidenceType: 'Texto académico',
         note: 'Manual de referencia de ACT y flexibilidad psicológica.',
       },

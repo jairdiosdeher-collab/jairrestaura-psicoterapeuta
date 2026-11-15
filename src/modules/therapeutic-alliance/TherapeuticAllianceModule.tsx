@@ -1,25 +1,84 @@
-import React, { useEffect, useState } from 'react';
-import { Check, Handshake, RefreshCw } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Check, Download, Handshake, RefreshCw } from 'lucide-react';
+import {
+  ClinicalNoticeBanner,
+  PiiWarningBox,
+  StorageErrorBanner,
+} from '../../components/ClinicalNoticeBanner';
 import { ALLIANCE_DIMENSIONS } from '../../data/narrativeAndAllianceData';
-import { loadAllianceNotes, saveAllianceNotes } from '../../services/storage/localStore';
+import { scanPotentialIdentifiers } from '../../services/privacy/privacyGuard';
+import {
+  downloadTextFile,
+  getLastStorageFailureReason,
+  getStorageErrorMessage,
+  loadAllianceNotes,
+  saveAllianceNotes,
+} from '../../services/storage/localStore';
+
+export function buildAllianceNotesMarkdown(notes: Record<string, string>): string {
+  const sections = ALLIANCE_DIMENSIONS.map((dim, idx) => {
+    const content = (notes[dim.id] || '').trim();
+    return [
+      `## 0${idx + 1}. ${dim.title}`,
+      content || '_Sin apuntes registrados en esta dimensión._',
+      '',
+    ].join('\n');
+  });
+
+  return [
+    '# JAIRRESTAURA · Apuntes Reflexivos sobre Alianza Terapéutica',
+    `Fecha de exportación: ${new Date().toLocaleDateString('es-ES')}`,
+    '',
+    '> **Aviso:** Material de autoexamen profesional y preparación de supervisión. No constituye historia clínica oficial ni diagnóstico.',
+    '',
+    ...sections,
+  ].join('\n');
+}
 
 export const TherapeuticAllianceModule: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string>(ALLIANCE_DIMENSIONS[0].id);
   const [notes, setNotes] = useState<Record<string, string>>(() => loadAllianceNotes());
   const [savedFlag, setSavedFlag] = useState(false);
-
-  useEffect(() => {
-    saveAllianceNotes(notes);
-  }, [notes]);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [confirmClearNote, setConfirmClearNote] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const current =
     ALLIANCE_DIMENSIONS.find((d) => d.id === selectedId) ?? ALLIANCE_DIMENSIONS[0];
 
+  const piiFindings = useMemo(
+    () => scanPotentialIdentifiers(Object.values(notes).join('\n')),
+    [notes]
+  );
+
   const handleNoteChange = (val: string) => {
-    setNotes((prev) => ({ ...prev, [current.id]: val }));
-    setSavedFlag(true);
-    setTimeout(() => setSavedFlag(false), 1200);
+    const next = { ...notes, [current.id]: val };
+    setNotes(next);
+    setConfirmClearNote(false);
+    const ok = saveAllianceNotes(next);
+    if (ok) {
+      setStorageError(null);
+      setSavedFlag(true);
+      window.setTimeout(() => setSavedFlag(false), 1200);
+    } else {
+      setSavedFlag(false);
+      setStorageError(getStorageErrorMessage(getLastStorageFailureReason()));
+    }
   };
+
+  const handleExportMarkdown = () => {
+    const ok = downloadTextFile(
+      `alianza-terapeutica-${Date.now()}.md`,
+      buildAllianceNotesMarkdown(notes)
+    );
+    if (!ok) {
+      setExportError('No se pudo generar la descarga automática en este navegador.');
+    } else {
+      setExportError(null);
+    }
+  };
+
+  const hasAnyNotes = Object.values(notes).some((v) => v.trim().length > 0);
 
   return (
     <div className="space-y-6">
@@ -35,6 +94,20 @@ export const TherapeuticAllianceModule: React.FC = () => {
         </p>
       </div>
 
+      <ClinicalNoticeBanner
+        variant="info"
+        title="Apuntes locales y sin identificadores"
+        body="Las notas de esta sección permanecen exclusivamente en tu navegador y no se envían a servidores externos. Evita incluir nombres reales o datos que permitan identificar a consultantes; exporta en Markdown si deseas conservar una copia."
+      />
+
+      <PiiWarningBox findings={piiFindings} />
+      <StorageErrorBanner message={storageError} onDismiss={() => setStorageError(null)} />
+      {exportError && (
+        <p role="alert" className="text-xs font-medium text-red-700 dark:text-red-300">
+          {exportError}
+        </p>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <div className="space-y-2 lg:col-span-4">
           {ALLIANCE_DIMENSIONS.map((dim, idx) => {
@@ -44,7 +117,10 @@ export const TherapeuticAllianceModule: React.FC = () => {
               <button
                 key={dim.id}
                 type="button"
-                onClick={() => setSelectedId(dim.id)}
+                onClick={() => {
+                  setSelectedId(dim.id);
+                  setConfirmClearNote(false);
+                }}
                 className={`w-full rounded-xl border px-4 py-3 text-left transition-colors ${
                   active
                     ? 'border-[#0F4C5C] bg-[#0F4C5C] text-white dark:border-teal-600 dark:bg-teal-900/60'
@@ -64,6 +140,18 @@ export const TherapeuticAllianceModule: React.FC = () => {
               </button>
             );
           })}
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={handleExportMarkdown}
+              disabled={!hasAnyNotes}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              <Download className="h-3.5 w-3.5" aria-hidden="true" />
+              Exportar apuntes (.md)
+            </button>
+          </div>
         </div>
 
         <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 lg:col-span-8 sm:p-6">
@@ -100,14 +188,14 @@ export const TherapeuticAllianceModule: React.FC = () => {
           </div>
 
           <div className="space-y-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label
                 htmlFor="alliance-note"
                 className="text-sm font-medium text-slate-800 dark:text-slate-200"
               >
                 Mis apuntes reflexivos sobre esta dimensión (guardado local sin identificadores)
               </label>
-              {savedFlag && (
+              {savedFlag && !storageError && (
                 <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-300">
                   <Check className="h-3.5 w-3.5" /> Guardado
                 </span>
@@ -122,14 +210,36 @@ export const TherapeuticAllianceModule: React.FC = () => {
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#0F4C5C] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
             {Boolean(notes[current.id]) && (
-              <button
-                type="button"
-                onClick={() => handleNoteChange('')}
-                className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Limpiar nota de esta dimensión
-              </button>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {!confirmClearNote ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClearNote(true)}
+                    className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Limpiar nota de esta dimensión
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-100">
+                    <span>¿Borrar la nota de esta dimensión?</span>
+                    <button
+                      type="button"
+                      onClick={() => handleNoteChange('')}
+                      className="rounded bg-red-700 px-2.5 py-1 font-medium text-white hover:bg-red-800"
+                    >
+                      Confirmar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClearNote(false)}
+                      className="rounded border border-slate-300 bg-white px-2.5 py-1 text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

@@ -1,10 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BookText, Download, Plus, Search, Trash2 } from 'lucide-react';
-import { ClinicalNoticeBanner, PiiWarningBox } from '../../components/ClinicalNoticeBanner';
+import {
+  ClinicalNoticeBanner,
+  PiiWarningBox,
+  StorageErrorBanner,
+} from '../../components/ClinicalNoticeBanner';
 import { scanPotentialIdentifiers } from '../../services/privacy/privacyGuard';
 import {
   clearAllJournalEntries,
   downloadTextFile,
+  getLastStorageFailureReason,
+  getStorageErrorMessage,
   loadJournalEntries,
   saveJournalEntries,
 } from '../../services/storage/localStore';
@@ -26,6 +32,33 @@ function createEmptyEntry(): JournalEntry {
   };
 }
 
+export function buildJournalMarkdown(entries: JournalEntry[]): string {
+  const body = entries
+    .map((e) =>
+      [
+        `## Registro del ${new Date(e.createdAt).toLocaleString('es-ES')}`,
+        `- **¿Qué aprendí hoy?**: ${e.learnedToday || '—'}`,
+        `- **¿Qué situación me resultó difícil?**: ${e.difficultSituation || '—'}`,
+        `- **¿Qué hice bien?**: ${e.doneWell || '—'}`,
+        `- **¿Qué podría mejorar?**: ${e.couldImprove || '—'}`,
+        `- **¿Qué necesito estudiar?**: ${e.needToStudy || '—'}`,
+        `- **¿Qué tema debería llevar a supervisión?**: ${e.supervisionTopic || '—'}`,
+        `- **¿Qué necesito cuidar de mí mismo?**: ${e.selfCareNeed || '—'}`,
+        '',
+      ].join('\n')
+    )
+    .join('\n');
+
+  return [
+    '# JAIRRESTAURA · Bitácora Profesional Privada',
+    `Fecha de exportación: ${new Date().toLocaleDateString('es-ES')}`,
+    '',
+    '> **Aviso educativo:** Diario reflexivo del terapeuta para aprendizaje y supervisión. NO constituye historia clínica oficial ni diagnóstico de consultantes.',
+    '',
+    body,
+  ].join('\n');
+}
+
 export const ProfessionalJournalModule: React.FC<{ onDataChange?: () => void }> = ({
   onDataChange,
 }) => {
@@ -34,12 +67,9 @@ export const ProfessionalJournalModule: React.FC<{ onDataChange?: () => void }> 
   const [searchQuery, setSearchQuery] = useState('');
   const [onlySupervision, setOnlySupervision] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [savedNotice, setSavedNotice] = useState(false);
-
-  useEffect(() => {
-    saveJournalEntries(entries);
-    onDataChange?.();
-  }, [entries, onDataChange]);
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   const piiFindings = useMemo(() => {
     const combined = [
@@ -70,59 +100,75 @@ export const ProfessionalJournalModule: React.FC<{ onDataChange?: () => void }> 
     const now = new Date().toISOString();
     const record: JournalEntry = { ...draft, updatedAt: now };
 
-    setEntries((prev) => {
-      const exists = prev.some((item) => item.id === record.id);
-      if (exists) {
-        return prev.map((item) => (item.id === record.id ? record : item));
-      }
-      return [record, ...prev];
-    });
+    const exists = entries.some((item) => item.id === record.id);
+    const nextEntries = exists
+      ? entries.map((item) => (item.id === record.id ? record : item))
+      : [record, ...entries];
 
-    setDraft(createEmptyEntry());
-    setSavedNotice(true);
-    setTimeout(() => setSavedNotice(false), 2200);
+    setEntries(nextEntries);
+    const ok = saveJournalEntries(nextEntries);
+    onDataChange?.();
+
+    if (ok) {
+      setStorageError(null);
+      setDraft(createEmptyEntry());
+      setSavedNotice(true);
+      window.setTimeout(() => setSavedNotice(false), 2200);
+    } else {
+      setSavedNotice(false);
+      setStorageError(getStorageErrorMessage(getLastStorageFailureReason()));
+    }
   };
 
   const handleDeleteEntry = (id: string) => {
-    setEntries((prev) => prev.filter((item) => item.id !== id));
+    const nextEntries = entries.filter((item) => item.id !== id);
+    setEntries(nextEntries);
     if (draft.id === id) setDraft(createEmptyEntry());
+    setConfirmDeleteId(null);
+
+    const ok = saveJournalEntries(nextEntries);
+    onDataChange?.();
+    if (!ok) {
+      setStorageError(getStorageErrorMessage(getLastStorageFailureReason()));
+    } else {
+      setStorageError(null);
+    }
   };
 
   const handleClearAll = () => {
-    clearAllJournalEntries();
+    const ok = clearAllJournalEntries();
+    setShowClearConfirm(false);
+    if (!ok) {
+      setStorageError(
+        'No se pudieron eliminar las entradas guardadas en el almacenamiento local del navegador.'
+      );
+      return;
+    }
+    setStorageError(null);
     setEntries([]);
     setDraft(createEmptyEntry());
-    setShowClearConfirm(false);
+    onDataChange?.();
   };
 
   const handleExportMarkdown = () => {
-    const md = entries
-      .map((e) =>
-        [
-          `## Registro del ${new Date(e.createdAt).toLocaleString('es-ES')}`,
-          `- **¿Qué aprendí hoy?**: ${e.learnedToday || '—'}`,
-          `- **¿Qué situación me resultó difícil?**: ${e.difficultSituation || '—'}`,
-          `- **¿Qué hice bien?**: ${e.doneWell || '—'}`,
-          `- **¿Qué podría mejorar?**: ${e.couldImprove || '—'}`,
-          `- **¿Qué necesito estudiar?**: ${e.needToStudy || '—'}`,
-          `- **¿Qué tema debería llevar a supervisión?**: ${e.supervisionTopic || '—'}`,
-          `- **¿Qué necesito cuidar de mí mismo?**: ${e.selfCareNeed || '—'}`,
-          '',
-        ].join('\n')
-      )
-      .join('\n');
-    downloadTextFile(
+    const ok = downloadTextFile(
       `bitacora-profesional-${Date.now()}.md`,
-      `# JAIRRESTAURA · Bitácora Profesional Privada\n\n${md}`
+      buildJournalMarkdown(entries)
     );
+    if (!ok) {
+      setStorageError('No se pudo generar la exportación en Markdown en este navegador.');
+    }
   };
 
   const handleExportJson = () => {
-    downloadTextFile(
+    const ok = downloadTextFile(
       `bitacora-profesional-${Date.now()}.json`,
       JSON.stringify(entries, null, 2),
       'application/json;charset=utf-8'
     );
+    if (!ok) {
+      setStorageError('No se pudo generar la exportación en JSON en este navegador.');
+    }
   };
 
   const filteredEntries = useMemo(() => {
@@ -166,6 +212,7 @@ export const ProfessionalJournalModule: React.FC<{ onDataChange?: () => void }> 
       />
 
       <PiiWarningBox findings={piiFindings} />
+      <StorageErrorBanner message={storageError} onDismiss={() => setStorageError(null)} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <form
@@ -221,7 +268,7 @@ export const ProfessionalJournalModule: React.FC<{ onDataChange?: () => void }> 
               className="inline-flex items-center gap-2 rounded-lg bg-[#0F4C5C] px-4 py-2 text-sm font-medium text-white hover:bg-[#0B3A47] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <BookText className="h-4 w-4" aria-hidden="true" />
-              {savedNotice ? 'Nota guardada en bitácora' : 'Guardar en bitácora local'}
+              {savedNotice && !storageError ? 'Nota guardada en bitácora' : 'Guardar en bitácora local'}
             </button>
 
             {entries.length > 0 && (
@@ -335,14 +382,34 @@ export const ProfessionalJournalModule: React.FC<{ onDataChange?: () => void }> 
                           {item.learnedToday || item.difficultSituation || item.supervisionTopic || 'Registro reflexivo'}
                         </p>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteEntry(item.id)}
-                        aria-label="Eliminar entrada de bitácora"
-                        className="rounded p-1 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-slate-800"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+
+                      {confirmDeleteId === item.id ? (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteEntry(item.id)}
+                            className="rounded bg-red-700 px-2 py-1 text-xs font-medium text-white hover:bg-red-800"
+                          >
+                            Confirmar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(item.id)}
+                          aria-label="Eliminar entrada de bitácora"
+                          className="rounded p-1 text-slate-400 hover:bg-white hover:text-red-600 dark:hover:bg-slate-800 shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                     {item.supervisionTopic && (
                       <p className="mt-1.5 text-xs text-[#0F4C5C] dark:text-teal-300">
